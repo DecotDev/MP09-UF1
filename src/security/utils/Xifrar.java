@@ -98,7 +98,7 @@ public class Xifrar {
     }
 
     public KeyStore loadKeyStore(String ksFile, String ksPwd) throws Exception {
-        KeyStore ks = KeyStore.getInstance("JCEKS");
+        KeyStore ks = KeyStore.getInstance("PKCS12");
         File f = new File (ksFile);
         if (f.isFile()) {
             FileInputStream in = new FileInputStream(f);
@@ -125,5 +125,95 @@ public class Xifrar {
             return null;
         }
     }
+
+    public static PublicKey getPublicKey(KeyStore ks, String alias, String pwMyKey) {
+        try {
+            if (!ks.containsAlias(alias)) {
+                System.err.println("⚠️ Error: Alias '" + alias + "' not found in keystore.");
+                return null;
+            }
+
+            // Retrieve the certificate stored under the alias
+            Certificate cert = ks.getCertificate(alias);
+            if (cert == null) {
+                System.err.println("⚠️ Error: No certificate found for alias '" + alias + "'.");
+                return null;
+            }
+
+            // Extract and return the public key
+            return cert.getPublicKey();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    public byte[] signData(byte[] data, PrivateKey priv) {
+        byte[] signature = null;
+
+        try {
+            Signature signer = Signature.getInstance("SHA1withRSA");
+            signer.initSign(priv);
+            signer.update(data);
+            signature = signer.sign();
+        } catch (Exception ex) {
+            System.err.println("Error signant les dades: " + ex);
+        }
+        return signature;
+    }
+
+    public boolean validateSignature(byte[] data, byte[] signature, PublicKey pub) {
+        boolean isValid = false;
+        try {
+            Signature signer = Signature.getInstance("SHA1withRSA");
+            signer.initVerify(pub);
+            signer.update(data);
+            isValid = signer.verify(signature);
+        } catch (Exception ex) {
+            System.err.println("Error validant les dades: " + ex);
+        }
+        return isValid;
+    }
+
+    public byte[][] encryptWrappedData(byte[] data, PublicKey pub) {
+        byte[][] encWrappedData = new byte[2][];
+        try {
+            KeyGenerator kgen = KeyGenerator.getInstance("AES");
+            kgen.init(128);
+            SecretKey sKey = kgen.generateKey();
+            Cipher cipher = Cipher.getInstance("AES");
+            cipher.init(Cipher.ENCRYPT_MODE, sKey);
+            byte[] encMsg = cipher.doFinal(data);
+            cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+            cipher.init(Cipher.WRAP_MODE, pub);
+            byte[] encKey = cipher.wrap(sKey);
+            encWrappedData[0] = encMsg;
+            encWrappedData[1] = encKey;
+        } catch (Exception  ex) {
+            System.err.println("Ha succeït un error xifrant: " + ex);
+        }
+        return encWrappedData;
+    }
+
+    public byte[] decryptWrappedData(byte[][] encWrappedData, PrivateKey priv) {
+        byte[] decryptedData = null;
+        try {
+            byte[] encMsg = encWrappedData[0];
+            byte[] encKey = encWrappedData[1];
+
+            Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+            cipher.init(Cipher.UNWRAP_MODE, priv);
+            SecretKey sKey = (SecretKey) cipher.unwrap(encKey, "AES", Cipher.SECRET_KEY);
+
+            cipher = Cipher.getInstance("AES");
+            cipher.init(Cipher.DECRYPT_MODE, sKey);
+            decryptedData = cipher.doFinal(encMsg);
+
+        } catch (Exception ex) {
+            System.err.println("Ha succeït un error desxifrant: " + ex);
+        }
+        return decryptedData;
+    }
+
 
 }
